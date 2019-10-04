@@ -4,11 +4,12 @@ using UnityEngine;
 
 public class Grid : MonoBehaviour
 {
-    public Transform playerPosition;
     public float nodeRadius;
     public Vector2 gridWorldSize;
     public LayerMask unwalkableLayer;
     Node[,] grid;
+
+    public List<Node> path;
 
     float nodeDiameter;
     int gridSizeX, gridSizeY;
@@ -22,11 +23,10 @@ public class Grid : MonoBehaviour
         //Dibujamos los nodos de la grid asignandoles un color segun sean 'walkables' o no
         if (grid != null)
         {
-            Node playerNode = NodeFromWorldPoint(playerPosition.position);
             foreach (Node node in grid)
             {
                 Gizmos.color = (node.walkable ? Color.white : Color.red);
-                if (node == playerNode) Gizmos.color = Color.cyan;
+                if (path != null && path.Contains(node)) Gizmos.color = Color.green;
                 Gizmos.DrawCube(node.worldPosition, Vector3.one * (nodeDiameter-.1f));
 
             }
