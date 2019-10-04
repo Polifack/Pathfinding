@@ -68,11 +68,43 @@ public class Grid : MonoBehaviour
                 bool walkable = !(Physics.CheckSphere(worldPoint, nodeRadius, unwalkableLayer));
 
                 //Finalmente con estos valores creamos el nuevo nodo y lo asignamos
-                grid[x, y] = new Node(walkable, worldPoint);
+                grid[x, y] = new Node(walkable, worldPoint, x, y);
             }
         }
     }
 
+    public List<Node> GetNeighbours(Node node)
+    {
+        List<Node> neighbours = new List<Node>();
+
+        /*Para obtener los nodos vecinos vamos a considerar una cuadricula de 3x3:
+         * | a | b | c |
+         * | d | x | e |
+         * | f | g | h |
+         * donde x es el nodo 'node' y el resto son los vecinos. Para calcularla consideramos a x como (0,0)
+         * y los nodos vecinos como variaciones entre (-1,-1), que vendría siendo f y (1,1) que vendría siendo c*/
+        
+        for (int x=-1; x<=1; x++)
+        {
+            for (int y = -1; y <= 1; y++)
+            {
+                //Consideramos que 0,0 es el nodo en al que le estamos calculando los vecinos, así que saltamos.
+                if (x == 0 && y == 0) continue;
+
+                //Obtenemos el nodo
+                int checkX = node.gridX + x;
+                int checkY = node.gridY + y;
+
+                //Comprobamos que los nodos se encuentran en la cuadricula
+                if (checkX >= 0 && checkX < gridSizeX && checkY >= 0 && checkY < gridSizeY)
+                {
+                    neighbours.Add(grid[checkX, checkY]);
+                }
+            }
+        }
+
+        return neighbours;
+    }
 
     public Node NodeFromWorldPoint(Vector3 worldPosition)
     {
