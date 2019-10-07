@@ -5,6 +5,8 @@ using UnityEngine;
 public class Grid : MonoBehaviour
 {
     public float nodeRadius;
+    public bool showGrid;
+    public bool showPath;
     public Vector2 gridWorldSize;
     public LayerMask unwalkableLayer;
     Node[,] grid;
@@ -13,6 +15,14 @@ public class Grid : MonoBehaviour
 
     float nodeDiameter;
     int gridSizeX, gridSizeY;
+
+    public int maxSize
+    {
+        get
+        {
+            return gridSizeX * gridSizeY;
+        }
+    }
 
     private void OnDrawGizmos()
     {
@@ -25,10 +35,16 @@ public class Grid : MonoBehaviour
         {
             foreach (Node node in grid)
             {
-                Gizmos.color = (node.walkable ? Color.white : Color.red);
-                if (path != null && path.Contains(node)) Gizmos.color = Color.green;
-                Gizmos.DrawCube(node.worldPosition, Vector3.one * (nodeDiameter-.1f));
-
+                if (path != null && path.Contains(node) && showPath)
+                {
+                    Gizmos.color = Color.green;
+                    Gizmos.DrawCube(node.worldPosition, Vector3.one * (nodeDiameter - .1f));
+                }
+                else if (showGrid)
+                {
+                    Gizmos.color = (node.walkable ? Color.white : Color.red);
+                    Gizmos.DrawCube(node.worldPosition, Vector3.one * (nodeDiameter - .1f));
+                }
             }
         }
     }
