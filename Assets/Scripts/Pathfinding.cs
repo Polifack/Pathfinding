@@ -1,36 +1,42 @@
-﻿using System.Collections;
+﻿using System;
+using System.Collections;
 using System.Collections.Generic;
-using System.Diagnostics;
 using UnityEngine;
 
 public class Pathfinding : MonoBehaviour
 {
-    public Transform seeker, target;
+    private PathRequestManager requestManager;
     private Grid grid;
 
     private void Awake()
     {
         grid = GetComponent<Grid>();
+        requestManager = GetComponent<PathRequestManager>();
     }
-    private void Update()
+
+    public void StartFindPath(Vector3 startPos, Vector3 targetPos)
     {
-        FindPath(seeker.position, target.position);
+        //Función que nos permite ejecutar una busqueda de caminos en paralelo mediante corrutinas.
+        StartCoroutine(FindPath(startPos, targetPos));
     }
-    private void FindPath(Vector3 startPos, Vector3 endPos)
+    private IEnumerator FindPath(Vector3 startPos, Vector3 endPos)
     {
-        //Cronometro para analizar el rendimiento del programa
-        Stopwatch sw = new Stopwatch();
-        sw.Start();
-
-
         Node startNode = grid.NodeFromWorldPoint(startPos);
         Node targetNode = grid.NodeFromWorldPoint(endPos);
 
+        Vector3[] waypoints = new Vector3[0];
+        bool pathSuccess = false;
+
+        if (!startNode.walkable || !targetNode.walkable)
+        {
+            Debug.LogWarning("WARNING: Target or Start node are not walkable");
+            yield return null;
+        }
+
         //Implementación del algoritmo A*. 
         Heap<Node> openSet = new Heap<Node>(grid.maxSize);
-        //List<Node> openSet = new List<Node>()
-
         HashSet<Node> closedSet = new HashSet<Node>();
+
         openSet.Add(startNode);
 
         while (openSet.Count > 0)
@@ -43,9 +49,9 @@ public class Pathfinding : MonoBehaviour
             if (currentNode == targetNode)
             {
                 RetracePath(startNode, targetNode);
-                sw.Stop();
-                UnityEngine.Debug.Log("HEAP time: " + sw.ElapsedMilliseconds + " ms");
-                return;
+                pathSuccess = true;
+
+                break;
             }
 
             foreach (Node neighbour in grid.GetNeighbours(currentNode))
@@ -72,6 +78,18 @@ public class Pathfinding : MonoBehaviour
                 }
             }
         }
+
+        yield return null;
+
+        if (pathSuccess)
+        {
+            waypoints = RetracePath(startNode, targetNode);
+            requestManager.FinishedProcessingPath(waypoints, pathSuccess);
+        }
+        else
+        {
+            Debug.LogWarning("WARNING: No path has been found");
+        }
     }
     private int GetDistance(Node nodeA, Node nodeB)
     {
@@ -83,7 +101,7 @@ public class Pathfinding : MonoBehaviour
             return 14 * dstY + 10 * (dstX - dstY);
         return 14 * dstX + 10 * (dstY - dstX);
     }
-    private void RetracePath(Node startNode, Node targetNode)
+    private Vector3[] RetracePath(Node startNode, Node targetNode)
     {
         List<Node> path = new List<Node>();
         Node currentNode = targetNode;
@@ -95,7 +113,28 @@ public class Pathfinding : MonoBehaviour
             currentNode = currentNode.parent;
         }
 
-        path.Reverse();
-        grid.path = path;
+        Vector3[] waypoints = SimplifyPath(path);
+        Array.Reverse(waypoints);
+        return waypoints;
+    }
+    private Vector3[] SimplifyPath(List<Node> path)
+    {
+        //Para mejorar la eficiencia de un path lo simplificamos para que solo se marquen los puntos importantes
+        //Consideramos los puntos relevantes aquellos en los que el camino cambia de direcci´n
+        List<Vector3> waypoints = new List<Vector3>();
+        Vector2 dirOld = Vector2.zero;
+
+        for (int i = 1; i < path.Count; i++)
+        {
+            //La nueva dirección se calcula como el vector que une los puntos de dos nodos consecutivos en el camino
+            Vector2 dirNew = new Vector2(path[i - 1].gridX - path[i].gridX, path[i - 1].gridY - path[i].gridY);
+            if (dirNew != dirOld)
+            {
+                waypoints.Add(path[i].worldPosition);
+            }
+            dirOld = dirNew;
+        }
+
+        return waypoints.ToArray();
     }
 }
