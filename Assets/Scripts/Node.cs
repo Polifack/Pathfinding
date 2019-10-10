@@ -3,15 +3,28 @@ using UnityEngine;
 
 public class Node : IHeapItem<Node>
 {
-    public Node parent;
-
+    //Atributes related to grid
     public bool walkable;
     public Vector3 worldPosition;
     public int gridX;
     public int gridY;
+    public int movementPenalty;
 
+    //Atributes related to pathfinding
+    public Node parent;
     public int gCost;
     public int hCost;
+    private int heapIndex;
+
+
+    public Node(bool _walkable, Vector3 _worldPos, int _gridX, int _gridY, int _penalty)
+    {
+        walkable = _walkable;
+        worldPosition = _worldPos;
+        gridX = _gridX;
+        gridY = _gridY;
+        movementPenalty = _penalty;
+    }
     public int fCost
     {
         get
@@ -19,8 +32,6 @@ public class Node : IHeapItem<Node>
             return gCost + hCost;
         }
     }
-
-    private int heapIndex;
     public int HeapIndex
     {
         get
@@ -31,14 +42,6 @@ public class Node : IHeapItem<Node>
         {
             heapIndex = value;
         }
-    }
-
-    public Node(bool _walkable, Vector3 _worldPos, int _gridX, int _gridY)
-    {
-        walkable = _walkable;
-        worldPosition = _worldPos;
-        gridX = _gridX;
-        gridY = _gridY;
     }
     public int CompareTo(Node other)
     {

@@ -6,20 +6,21 @@ public class Grid : MonoBehaviour
 {
     public float nodeRadius;
     public bool showGrid;
+    public int blurSize;
     public Vector2 gridWorldSize;
     public LayerMask unwalkableLayer;
-    Node[,] grid;
+    public TerrainType[] walkableRegions;
+    private LayerMask walkableMask;
+    private Dictionary<int, int> walkableRegionsHash = new Dictionary<int, int>();
 
-    float nodeDiameter;
-    int gridSizeX, gridSizeY;
+    private Node[,] grid;
 
-    public int maxSize
-    {
-        get
-        {
-            return gridSizeX * gridSizeY;
-        }
-    }
+    private float nodeDiameter;
+    private int gridSizeX, gridSizeY;
+
+    private int penaltyMin = int.MaxValue;
+    private int penaltyMax = int.MinValue;
+
 
     private void OnDrawGizmos()
     {
@@ -34,13 +35,16 @@ public class Grid : MonoBehaviour
             {
                 if (showGrid)
                 {
-                    Gizmos.color = (node.walkable ? Color.white : Color.red);
-                    Gizmos.DrawCube(node.worldPosition, Vector3.one * (nodeDiameter - .1f));
+                    //Obtenemos el color del nodo relativo a su peso 
+                    Color weight = Color.Lerp(Color.white, Color.black, Mathf.InverseLerp(penaltyMin, penaltyMax,
+                        node.movementPenalty));
+
+                    Gizmos.color = (node.walkable ? weight : Color.red);
+                    Gizmos.DrawCube(node.worldPosition, Vector3.one * (nodeDiameter));
                 }
             }
         }
     }
-
     private void Awake()
     {
         nodeDiameter = nodeRadius * 2;
@@ -48,9 +52,32 @@ public class Grid : MonoBehaviour
         gridSizeX = Mathf.RoundToInt(gridWorldSize.x / nodeDiameter);
         gridSizeY = Mathf.RoundToInt(gridWorldSize.y / nodeDiameter);
 
+        /* Añadimos todas las Walkable Regions a la Layer Mask.
+         * Hay que tener en cuenta que Unity guarda los indices de las layers en un Integer de 32 bits.
+         * Por ejemplo la layer 9 sería 00000000 0000000 0000000 00000010 0000000
+         * y la layer 10 sería 00000000 0000000 0000000 00000100 0000000
+         * por lo que si queremos crear una LayerMask que contenga tanto la 9 como la 10 usamos el OR operator
+         * para sumarlas (OR se representa como " | ") */
+
+        foreach (TerrainType terrain in walkableRegions)
+        {
+            walkableMask.value |= terrain.terrainMask.value;
+
+            //Para acceder rapidamente a cada una de las penalizaciones del terreno las storeamos en un hash
+            walkableRegionsHash.Add((int)Mathf.Log(terrain.terrainMask.value, 2), terrain.terrainPenalty);
+        }
+
+
         CreateGrid();
     }
 
+    public int MaxSize
+    {
+        get
+        {
+            return gridSizeX * gridSizeY;
+        }
+    }
     private void CreateGrid()
     {
         //Creamos la nueva grid basandonos en el numero de nodos que caben
@@ -75,12 +102,28 @@ public class Grid : MonoBehaviour
                 //con algun objeto que pertenezca a la layer designada como "unwalkable"
                 bool walkable = !(Physics.CheckSphere(worldPoint, nodeRadius, unwalkableLayer));
 
+                //Calculamos la penalización del movimiento de dicho nodo
+                int movementPenalty = 0;
+                if (walkable)
+                {
+                    Ray ray = new Ray(worldPoint + Vector3.up * 50, Vector3.down);
+                    RaycastHit hit;
+
+                    //Hacemos el raycast pasando como referencia la variable 'hit' en la que se storean los datos de la colision
+                    if (Physics.Raycast(ray, out hit, 100, walkableMask))
+                    {
+                        //Si nos encontramos con algun objeto intentamos asociar la layer de dicho objeto con el movementPenalty.
+                        walkableRegionsHash.TryGetValue(hit.collider.gameObject.layer, out movementPenalty);
+                    }
+                }
+
                 //Finalmente con estos valores creamos el nuevo nodo y lo asignamos
-                grid[x, y] = new Node(walkable, worldPoint, x, y);
+                grid[x, y] = new Node(walkable, worldPoint, x, y, movementPenalty);
             }
         }
-    }
 
+        BlurWeights(blurSize);
+    }
     public List<Node> GetNeighbours(Node node)
     {
         List<Node> neighbours = new List<Node>();
@@ -113,7 +156,6 @@ public class Grid : MonoBehaviour
 
         return neighbours;
     }
-
     public Node NodeFromWorldPoint(Vector3 worldPosition)
     {
         //Para calcular la posición de un objeto respecto a una cuadricula tenemos que calcular en que % de la cuadricula está
@@ -133,4 +175,97 @@ public class Grid : MonoBehaviour
 
         return grid[x, y];
     }
+    public void BlurWeights(int blurSize)
+    {
+        //If blurSize = 1 entonces estamos comparando con las 2 casillas colindantes, por lo que la matriz de kernel 
+        //Es de 3x3, o lo que es lo mismo 2*1+1
+        int kernelSize = blurSize * 2 + 1;
+
+        //Tamaño de los nodos que entran en el kernel durante cada iteración, por ejemplo si el kernel es de 3x3 cada
+        //iteración va a entrar un nodo en el kernel (y salir otro)
+        int kernelExtents = (kernelSize - 1) / 2;
+
+        int[,] penaltiesHorizontalPass = new int[gridSizeX, gridSizeY];
+        int[,] penaltiesVerticalPass = new int[gridSizeX, gridSizeY];
+
+        //Atravesamos la matriz horizontalmente.
+        for (int y = 0; y < gridSizeY; y++)
+        {
+            /* Calculamos los valores de la primera columna
+             * para ello la parseamos en horizontal tantas veces como el tamaño del kernel extent
+             * cada iteración vamos acumulando el valor, por lo que es lo mismo que si extendiesemos la matriz
+             * EJ: Si kernel extend = 1 tendriamos que sumar 2 veces el valor del borde, entonces pasamos 2 veces por 
+             * el bucle
+             */
+            for (int x = -kernelExtents; x <= kernelExtents; x++)
+            {
+                int sampleX = Mathf.Clamp(x, 0, kernelExtents);
+                penaltiesHorizontalPass[0, y] += grid[sampleX, y].movementPenalty;
+            }
+
+            //Calcualmos el resto de valores simplemente desplazando el kernel horizontalmente
+            for (int x = 1; x < gridSizeX; x++)
+            {
+                int removeIndex = Mathf.Clamp(x - kernelExtents - 1, 0, gridSizeX);
+                int addIndex = Mathf.Clamp(x + kernelExtents, 0, gridSizeX - 1);
+
+                //El valor de x, y va a ser el valor de x-1, y - penalizacion eliminado + penalizacion añadido
+                penaltiesHorizontalPass[x, y] = penaltiesHorizontalPass[x - 1, y] - grid[removeIndex, y].movementPenalty +
+                    grid[addIndex, y].movementPenalty;
+            }
+
+        }
+
+        //Atravesamos la matriz verticalmente.
+        for (int x = 0; x < gridSizeX; x++)
+        {
+            //Hacemos la acumulación del valor directamente en la matriz, sumando los valoers a lo obtenido en el parseo por filas.
+            for (int y = -kernelExtents; y <= kernelExtents; y++)
+            {
+                int sampleY = Mathf.Clamp(y, 0, kernelExtents);
+                penaltiesVerticalPass[x, 0] += penaltiesHorizontalPass[x, sampleY];
+            }
+
+            //Asignamos el valor de desenfoque de la primera fila
+            int blurredPenalty = Mathf.RoundToInt((float)penaltiesVerticalPass[x, 0] / (kernelSize * kernelSize));
+            grid[x, 0].movementPenalty = blurredPenalty;
+
+            //Calcualmos el resto de valores simplemente desplazando el kernel horizontalmente
+            for (int y = 1; y < gridSizeY; y++)
+            {
+                int removeIndex = Mathf.Clamp(y - kernelExtents - 1, 0, gridSizeY);
+                int addIndex = Mathf.Clamp(y + kernelExtents, 0, gridSizeY - 1);
+
+                //El valor de x, y va a ser el valor de x-1, y - penalizacion eliminado + penalizacion añadido
+                penaltiesVerticalPass[x, y] = penaltiesVerticalPass[x, y - 1] - penaltiesHorizontalPass[x, removeIndex] +
+                    penaltiesHorizontalPass[x, addIndex];
+
+                //Una vez que se acabe este bucle consideramos que ya se han obtenido todos los datos, entonces pasamos a calcular
+                //el valor definitivo del desenfoque
+
+                blurredPenalty = Mathf.RoundToInt((float)penaltiesVerticalPass[x, y] / (kernelSize * kernelSize));
+
+                //Asignamos el valor de desenfoque
+                grid[x, y].movementPenalty = blurredPenalty;
+
+                //Guardamos los valores maximos y minimos de las penalizaciones para poder dibujarlas en el gizmos
+                if (blurredPenalty > penaltyMax)
+                {
+                    penaltyMax = blurredPenalty;
+                }
+                if (blurredPenalty < penaltyMin)
+                {
+                    penaltyMin = blurredPenalty;
+                }
+            }
+
+        }
+    }
+}
+
+[System.Serializable]
+public class TerrainType
+{
+    public LayerMask terrainMask;
+    public int terrainPenalty;
 }

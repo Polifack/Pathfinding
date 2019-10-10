@@ -34,7 +34,7 @@ public class Pathfinding : MonoBehaviour
         }
 
         //Implementación del algoritmo A*. 
-        Heap<Node> openSet = new Heap<Node>(grid.maxSize);
+        Heap<Node> openSet = new Heap<Node>(grid.MaxSize);
         HashSet<Node> closedSet = new HashSet<Node>();
 
         openSet.Add(startNode);
@@ -62,8 +62,8 @@ public class Pathfinding : MonoBehaviour
                     continue;
                 }
 
-                //Calculamos el coste del camino hasta ese nodo
-                int newPathToNeighbour = currentNode.gCost + GetDistance(currentNode, neighbour);
+                //Calculamos el coste del camino hasta ese nodo (añadiendo la penalización del movimiento por terreno de dicho nodo)
+                int newPathToNeighbour = currentNode.gCost + GetDistance(currentNode, neighbour) + neighbour.movementPenalty;
 
                 //Si el nodo no ha sido inicializado o se ha encontrado un camino más corto hasta ese nodo
                 //actualizamos/inicializamos los valores de g cost y h cost en el nodo así como le asignamos un nodo padre
@@ -75,6 +75,7 @@ public class Pathfinding : MonoBehaviour
 
                     if (!openSet.Contains(neighbour))
                         openSet.Add(neighbour);
+                    else openSet.UpdateItem(neighbour);
                 }
             }
         }
